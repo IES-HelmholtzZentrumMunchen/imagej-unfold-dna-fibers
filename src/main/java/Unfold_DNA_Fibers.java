@@ -104,7 +104,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	@Override
 	public void run(ImageProcessor ip) {
 		if (this.showAndCheckDialog()) {
-			Vector<ImagePlus> fibers = this.process();
+			Vector<UnfoldedFiber> fibers = this.process();
 			
 			// TODO display the output
 		}
@@ -146,9 +146,9 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 *
 	 * @return A vector of images containing extracted and unfolded DNA fibers.
 	 */
-	public Vector<ImagePlus> process() {
+	public Vector<UnfoldedFiber> process() {
 		// TODO process
-		return new Vector<ImagePlus>();
+		return new Vector<UnfoldedFiber>();
 	}
 
 	/**
@@ -186,6 +186,16 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 * @author Julien Pontabry
 	 */
 	public class UnfoldedFiber {
+		/** Image of the unfolded fiber. */
+		public ImagePlus fiberImage;
 		
+		/**
+		 * Intensity profiles of the unfolded fiber.
+		 *
+		 * The first row contains the positions (1D
+		 * coordinates) on the fiber. The further rows
+		 * contain the intensity profiles.
+		 */
+		public double[][] fiberProfiles;
 	}
 }
