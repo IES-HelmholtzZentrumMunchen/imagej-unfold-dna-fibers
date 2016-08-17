@@ -92,4 +92,13 @@
     	<name>Helmholtz Institute of Epigenetics and Stem cells</name>
     	<url>http://www.helmholtz-muenchen.de/ies/index.html</url>
     </organization>
+    <dependencyManagement>
+    	<dependencies>
+    		<dependency>
+    			<groupId>net.imagej</groupId>
+    			<artifactId>ij</artifactId>
+    			<version>1.51e</version>
+    		</dependency>
+    	</dependencies>
+    </dependencyManagement>
 </project>
