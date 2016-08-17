@@ -18,14 +18,18 @@
  */
 
 import java.awt.Point;
+import java.awt.geom.Point2D;
 import java.util.Vector;
 
 import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
+import ij.gui.Arrow;
 import ij.gui.GenericDialog;
+import ij.gui.Line;
 import ij.plugin.filter.PlugInFilter;
+import ij.plugin.frame.RoiManager;
 import ij.process.ImageProcessor;
 
 /**
@@ -45,7 +49,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	protected Roi roi;
 
 	/** The width of the fibers */
-	public int width = 5;
+	public int radius = 2;
 
 	/**
 	 * @see ij.plugin.filter.PlugInFilter#setup(java.lang.String, ij.ImagePlus)
@@ -106,7 +110,10 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		if (this.showAndCheckDialog()) {
 			Vector<UnfoldedFiber> fibers = this.process();
 			
-			// TODO display the output
+			// TODO Display the output and plot the profiles
+			for (UnfoldedFiber fiber : fibers) {
+				fiber.fiberImage.show();
+			}
 		}
 	}
 
@@ -117,13 +124,13 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	private boolean showDialog() {
 		GenericDialog gd = new GenericDialog("DNA Fibers - extract and unfold");
 	
-		gd.addNumericField("width", this.width, 0);
+		gd.addNumericField("radius", this.radius, 0);
 	
 		gd.showDialog();
 		if (gd.wasCanceled())
 			return false;
 	
-		this.width = (int)gd.getNextNumber();
+		this.radius = (int)gd.getNextNumber();
 
 		return true;
 	}
@@ -133,7 +140,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		boolean notCanceled = this.showDialog();
 		
 		// Check parameters
-		while(notCanceled && !this.checkWidth(this.width)) {
+		while(notCanceled && !this.checkWidth(this.radius)) {
 			IJ.showMessage("Width must be strictly positive!");
 			notCanceled = this.showDialog();
 		}
@@ -147,8 +154,51 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 * @return A vector of images containing extracted and unfolded DNA fibers.
 	 */
 	public Vector<UnfoldedFiber> process() {
-		// TODO process
-		return new Vector<UnfoldedFiber>();
+		Vector<UnfoldedFiber> fibers = new Vector<UnfoldedFiber>();
+		
+		RoiManager manager = RoiManager.getInstance();
+		if (manager == null)
+			manager = new RoiManager();
+		
+		Point[] points = roi.getContainedPoints();
+		
+		// TODO Add points before and after curve to compensate for the point loss when fitting
+		
+		for (int i = 2; i < points.length-2; i++) {
+			// Compute the tangent vector at point p
+			// with a least-square line fit in order to
+			// avoid numerical issues
+			double x1 = points[i-2].getX(), y1 = points[i-2].getY();
+			double x2 = points[i-1].getX(), y2 = points[i-1].getY();
+			double x3 = points[i].getX(),   y3 = points[i].getY();
+			double x4 = points[i+1].getX(), y4 = points[i+1].getY();
+			double x5 = points[i+2].getX(), y5 = points[i+2].getY();
+			
+			double slope = ( x1*y2 - 4.*x1*y1 + x2*y1 + x1*y3 - 4.*x2*y2 + x3*y1 + x1*y4 + x2*y3 + x3*y2 + x4*y1 + 
+							 x1*y5 + x2*y4 - 4.*x3*y3 + x4*y2 + x5*y1 + x2*y5 + x3*y4 + x4*y3 + x5*y2 + x3*y5 - 
+							 4.*x4*y4 + x5*y3 + x4*y5 + x5*y4 - 4.*x5*y5 ) / 
+						   ( 2. * ( - 2.*x1*x1 + x1*x2 + x1*x3 + x1*x4 + x1*x5 - 2.*x2*x2 + x2*x3 + x2*x4 + x2*x5 - 
+								   2.*x3*x3 + x3*x4 + x3*x5 - 2.*x4*x4 + x4*x5 - 2.*x5*x5 ) );
+			
+			Point2D normal = new Point2D.Double(1,0); // In NaN case, it means vertical line (horizontal normal) with top-left origin
+			
+			if (!Double.isNaN(slope)) {
+				double x = Math.sqrt(1./(1+slope*slope)); // Parametric formula that makes unit vector
+				normal = new Point2D.Double(-slope*x, x); // In 2D, orthogonal vector is unique
+			}
+			
+			if (i % 5 == 0) {
+				manager.addRoi(new Line(
+						x2-this.radius*normal.getX(), y2-this.radius*normal.getY(),
+						x2+this.radius*normal.getX(), y2+this.radius*normal.getY()));
+			}
+			
+			// TODO sample intensity along normal (2*radius + 1)
+			
+			// TODO 
+		}
+		
+		return fibers;
 	}
 
 	/**
