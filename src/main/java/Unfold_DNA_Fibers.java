@@ -17,15 +17,19 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import java.awt.Point;
+import java.util.Vector;
+
 import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
-//import ij.gui.GenericDialog;
+import ij.gui.Roi;
+import ij.gui.GenericDialog;
 import ij.plugin.filter.PlugInFilter;
 import ij.process.ImageProcessor;
 
 /**
- * UnfoldDNAFibers
+ * Plugin for DNA fibers extraction and unfolding.
  *
  * After DNA fibers detection (manually or automatically), the fibers are
  * located by their centerline (represented by a line ROI). They can be
@@ -34,19 +38,64 @@ import ij.process.ImageProcessor;
  * @author Julien Pontabry
  */
 public class Unfold_DNA_Fibers implements PlugInFilter {
+	/** The input image */
 	protected ImagePlus image;
+	
+	/** The input ROIs */
+	protected Roi roi;
 
-	// plugin parameters
-	public double value;
-	public String name;
+	/** The width of the fibers */
+	public int width = 5;
 
 	/**
 	 * @see ij.plugin.filter.PlugInFilter#setup(java.lang.String, ij.ImagePlus)
 	 */
 	@Override
 	public int setup(String arg, ImagePlus imp) {
-		image = imp;
-		return DOES_8G | DOES_16 | DOES_32 | DOES_RGB;
+		// Get inputs
+		this.image = imp;
+		this.roi = this.image.getRoi();
+		
+		// Check validity of ROIs
+		if (!this.checkRois(this.roi)) {
+			IJ.showMessage("Only straight, segmented and freehand lines are accepted as ROIs!");
+			return DONE;
+		}
+		
+		// Finish the setup
+		return DOES_8G | DOES_16 | DOES_32 | NO_CHANGES | ROI_REQUIRED;
+	}
+	
+	/**
+	 * Check the validity of the ROIs.
+	 * 
+	 * A valid ROI is not null and one of the following: line,
+	 * polyline and freeline.
+	 * 
+	 * @param roi Input roi to check
+	 * @return True if the ROIs are valid, false otherwise.
+	 */
+	private boolean checkRois(Roi roi) {
+		if (this.roi != null && 
+		this.roi.getType() != Roi.LINE && 
+		this.roi.getType() != Roi.POLYLINE &&
+		this.roi.getType() != Roi.FREELINE) {
+			return false;
+		}
+		else // not null and one of the valid ROI
+			return true;
+	}
+	
+	/**
+	 * Check the validity of the width parameter.
+	 * @param width Parameter value to check.
+	 * @return True if the width is valid, false otherwise.
+	 */
+	private boolean checkWidth(int width) {
+		if (width <= 0)
+			return false;
+		else
+			return true;
 	}
 
 	/**
@@ -54,45 +103,52 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 */
 	@Override
 	public void run(ImageProcessor ip) {
-		/*if (showDialog()) {
-			process(ip);
-			image.updateAndDraw();
-		}*/
+		if (this.showAndCheckDialog()) {
+			Vector<ImagePlus> fibers = this.process();
+			
+			// TODO display the output
+		}
 	}
 
-	/*private boolean showDialog() {
-		GenericDialog gd = new GenericDialog("Process pixels");
-
-		// default value is 0.00, 2 digits right of the decimal point
-		gd.addNumericField("value", 0.00, 2);
-		gd.addStringField("name", "John");
-
+	/**
+	 * Show the dialog box for input parameters.
+	 * @return True if the dialog box has been filled and accepted, false otherwise.
+	 */
+	private boolean showDialog() {
+		GenericDialog gd = new GenericDialog("DNA Fibers - extract and unfold");
+	
+		gd.addNumericField("width", this.width, 0);
+	
 		gd.showDialog();
 		if (gd.wasCanceled())
 			return false;
-
-		// get entered values
-		value = gd.getNextNumber();
-		name = gd.getNextString();
+	
+		this.width = (int)gd.getNextNumber();
 
 		return true;
-	}*/
+	}
+	
+	private boolean showAndCheckDialog() {
+		// Call dialog
+		boolean notCanceled = this.showDialog();
+		
+		// Check parameters
+		while(notCanceled && !this.checkWidth(this.width)) {
+			IJ.showMessage("Width must be strictly positive!");
+			notCanceled = this.showDialog();
+		}
+		
+		return notCanceled;
+	}
 
 	/**
-	 * Process an image.
+	 * Extract and unfold DNA fibers selected by ROIs.
 	 *
-	 * Please provide this method even if {@link ij.plugin.filter.PlugInFilter} does require it;
-	 * the method {@link ij.plugin.filter.PlugInFilter#run(ij.process.ImageProcessor)} can only
-	 * handle 2-dimensional data.
-	 *
-	 * If your plugin does not change the pixels in-place, make this method return the results and
-	 * change the {@link #setup(java.lang.String, ij.ImagePlus)} method to return also the
-	 * <i>DOES_NOTHING</i> flag.
-	 *
-	 * @param image the image (possible multi-dimensional)
+	 * @return A vector of images containing extracted and unfolded DNA fibers.
 	 */
-	public void process(ImagePlus image) {
-		IJ.showMessage("Hello world from new plugin!");
+	public Vector<ImagePlus> process() {
+		// TODO process
+		return new Vector<ImagePlus>();
 	}
 
 	/**
@@ -113,11 +169,23 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		// start ImageJ
 		new ImageJ();
 
-		/*// open the Clown sample
-		ImagePlus image = IJ.openImage("http://imagej.net/images/clown.jpg");
-		image.show();*/
+		// open the Clown sample
+		ImagePlus image = IJ.openImage("http://imagej.net/images/blobs.gif");
+		image.show();
 
 		/*// run the plugin
 		IJ.runPlugIn(clazz.getName(), "");*/
+	}
+	
+	/**
+	 * Structure for the output of the plugin.
+	 * 
+	 * This structure holds an image corresponding to the unfolded
+	 * fibers and its associated intensity profiles.
+	 * 
+	 * @author Julien Pontabry
+	 */
+	public class UnfoldedFiber {
+		
 	}
 }
