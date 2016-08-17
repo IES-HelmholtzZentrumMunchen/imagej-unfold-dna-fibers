@@ -25,7 +25,7 @@ import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
-import ij.gui.Arrow;
+import ij.process.FloatPolygon;
 import ij.gui.GenericDialog;
 import ij.gui.Line;
 import ij.plugin.filter.PlugInFilter;
@@ -160,19 +160,19 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		if (manager == null)
 			manager = new RoiManager();
 		
-		Point[] points = roi.getContainedPoints();
+		FloatPolygon points = this.roi.getInterpolatedPolygon();
 		
 		// TODO Add points before and after curve to compensate for the point loss when fitting
 		
-		for (int i = 2; i < points.length-2; i++) {
+		for (int i = 2; i < points.npoints-2; i++) {
 			// Compute the tangent vector at point p
 			// with a least-square line fit in order to
 			// avoid numerical issues
-			double x1 = points[i-2].getX(), y1 = points[i-2].getY();
-			double x2 = points[i-1].getX(), y2 = points[i-1].getY();
-			double x3 = points[i].getX(),   y3 = points[i].getY();
-			double x4 = points[i+1].getX(), y4 = points[i+1].getY();
-			double x5 = points[i+2].getX(), y5 = points[i+2].getY();
+			double x1 = points.xpoints[i-2], y1 = points.ypoints[i-2];
+			double x2 = points.xpoints[i-1], y2 = points.ypoints[i-1];
+			double x3 = points.xpoints[i],   y3 = points.ypoints[i];
+			double x4 = points.xpoints[i+1], y4 = points.ypoints[i+1];
+			double x5 = points.xpoints[i+2], y5 = points.ypoints[i+2];
 			
 			double slope = ( x1*y2 - 4.*x1*y1 + x2*y1 + x1*y3 - 4.*x2*y2 + x3*y1 + x1*y4 + x2*y3 + x3*y2 + x4*y1 + 
 							 x1*y5 + x2*y4 - 4.*x3*y3 + x4*y2 + x5*y1 + x2*y5 + x3*y4 + x4*y3 + x5*y2 + x3*y5 - 
@@ -193,9 +193,9 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 						x2+this.radius*normal.getX(), y2+this.radius*normal.getY()));
 			}
 			
-			// TODO sample intensity along normal (2*radius + 1)
+			// TODO Sample intensity along normal (2*radius + 1)
 			
-			// TODO 
+			// TODO Compute profile using max intensity
 		}
 		
 		return fibers;
