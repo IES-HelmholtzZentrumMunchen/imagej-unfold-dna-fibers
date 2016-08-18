@@ -29,6 +29,8 @@ import ij.gui.Roi;
 import ij.process.FloatPolygon;
 import ij.gui.GenericDialog;
 import ij.gui.Line;
+import ij.gui.NewImage;
+import ij.gui.Plot;
 import ij.gui.PointRoi;
 import ij.plugin.filter.PlugInFilter;
 import ij.plugin.frame.RoiManager;
@@ -45,10 +47,10 @@ import ij.process.ImageProcessor;
  */
 public class Unfold_DNA_Fibers implements PlugInFilter {
 	/** The input image */
-	protected ImagePlus image;
+	protected ImagePlus image = null;
 	
 	/** The input ROIs */
-	protected Roi roi;
+	protected Roi roi = null;
 
 	/** The width of the fibers */
 	public int radius = 2;
@@ -115,6 +117,15 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 			// TODO Display the output and plot the profiles
 			for (UnfoldedFiber fiber : fibers) {
 				fiber.fiberImage.show();
+				
+				Plot plot = new Plot("Profiles #1", "Length", "Intensity level");
+				plot.addPoints(fiber.fiberProfiles[0], fiber.fiberProfiles[1], Plot.LINE);
+				plot.draw();
+				plot.show();
+				/*double[] x = {0,1,2,3};
+				double[] y = {0,1,4,9};
+				Plot plot = new Plot("Profiles #1", "Length", "Intensity level", x, y);
+				plot.show();*/
 			}
 		}
 	}
@@ -168,16 +179,48 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 
 		Vector<Point2D[]> normals = this.computeNormals(this.roi);
 
-		
-		/*// TODO Sample intensity along normal (2*radius + 1)
+		// Sample intensity along normals (2*radius + 1) and compute
+		// the profile (take the maximal value of each column).
+		// Put the intensities into a new image of unfolded fiber
+		// and the maximal intensity in a table.
 		IJ.showMessage(IJ.d2s(this.image.getNChannels()));
-		for (int c = 1; c <= this.image.getNChannels(); c++) {
-			this.image.setC(c);
+		
+		ImagePlus unfoldedFiber = IJ.createHyperStack( // Initialize the image of unfolded fiber
+				"Fiber #1", normals.size(), 2*this.radius+1, this.image.getNChannels(),
+				this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
+		
+		double[][] profiles = new double[normals.size()][unfoldedFiber.getNChannels()];
+		
+		// Go through each channels
+		for (int c = 0; c < this.image.getNChannels(); c++) {
+			this.image.setC(c+1);
 			ImageProcessor ip = this.image.getChannelProcessor();
-			IJ.showMessage(IJ.d2s(ip.getMax()));
-		}*/
+			
+			unfoldedFiber.setC(c+1);
+			ImageProcessor fp = unfoldedFiber.getChannelProcessor();
+			
+			ip.setInterpolate(true);
+			ip.setInterpolationMethod(ImageProcessor.BICUBIC);
+			
+			// Go through each point of ROI
+			for (int x = 0; x < normals.size(); x++) {
+				Point2D[] normal = normals.get(x);
+				profiles[c][x] = 0.;
+				
+				for (int s = -this.radius, y = 0; s <= this.radius; s++, y++) {
+					double interpolatedValue = ip.getInterpolatedPixel( // Interpolate pixel value
+							normal[0].getX() + s*normal[1].getX(), 
+							normal[0].getY() + s*normal[1].getY());
+
+					fp.setf(x,y,(float)interpolatedValue); // Fill image of unfolded fiber
 					
-					// TODO Compute profile using max intensity
+					if (Double.compare(profiles[c][x], interpolatedValue) < 0) // Get maximal value for profile
+						profiles[c][x] = interpolatedValue;
+				}
+			}
+		}
+		
+		fibers.add(new UnfoldedFiber(unfoldedFiber, profiles));
 		
 		return fibers;
 	}
@@ -186,9 +229,12 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 * Compute the normals from the points of a ROI.
 	 * 
 	 * The ROI is supposed to be a line, a polyline or a freeline.
+	 * The output is a vector of arrays, containing two elements:
+	 * the first one is the current point and the second one is 
+	 * the associated normal.
 	 * 
 	 * @param roi The input ROI.
-	 * @return The normals (and points) of the given ROI.
+	 * @return The points in image and associated normals of the given ROI.
 	 */
 	protected Vector<Point2D[]> computeNormals(Roi roi) {
 		Vector<Point2D[]> normals = new Vector<Point2D[]>();
@@ -223,6 +269,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 						   ( 2. * ( - 2.*x1*x1 + x1*x2 + x1*x3 + x1*x4 + x1*x5 - 2.*x2*x2 + x2*x3 + x2*x4 + x2*x5 - 
 								   2.*x3*x3 + x3*x4 + x3*x5 - 2.*x4*x4 + x4*x5 - 2.*x5*x5 ) );
 			
+			// FIXME the normal orientation is important if we do not want to inverse suddenly the images columns
 			Point2D normal = new Point2D.Double(1,0); // In NaN case, it means horizontal normal (vertical tangent), so initialize to (1,0)
 			
 			if (!Double.isNaN(slope)) {
@@ -233,10 +280,13 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 			/*manager.addRoi(new PointRoi(x3,y3));
 			manager.addRoi(new Line(
 					x3-this.radius*normal.getX(), y3-this.radius*normal.getY(),
-					x3+this.radius*normal.getX(), y3+this.radius*normal.getY()));*/
+					x3+this.radius*normal.getX(), y3+this.radius*normal.getY()));
+			manager.addRoi(new PointRoi(x3+this.radius*normal.getX(), y3+this.radius*normal.getY()));*/
 			
 			normals.add(new Point2D[]{new Point2D.Double(x3,y3), normal});
 		}
+		
+		// TODO smooth the slope with a moving average?
 		
 		return normals;
 	}
@@ -277,7 +327,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 */
 	public class UnfoldedFiber {
 		/** Image of the unfolded fiber. */
-		public ImagePlus fiberImage;
+		public ImagePlus fiberImage = null;
 		
 		/**
 		 * Intensity profiles of the unfolded fiber.
@@ -286,6 +336,20 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		 * coordinates) on the fiber. The further rows
 		 * contain the intensity profiles.
 		 */
-		public double[][] fiberProfiles;
+		public double[][] fiberProfiles = null;
+		
+		UnfoldedFiber() {
+			
+		}
+		
+		/**
+		 * Constructor
+		 * @param fiberImage
+		 * @param fiberProfiles
+		 */
+		UnfoldedFiber(ImagePlus fiberImage, double[][] fiberProfiles) {
+			this.fiberImage = fiberImage;
+			this.fiberProfiles = fiberProfiles;
+		}
 	}
 }
