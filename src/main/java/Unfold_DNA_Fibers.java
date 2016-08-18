@@ -17,10 +17,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import java.awt.Color;
 import java.awt.Point;
 import java.awt.geom.Point2D;
 import java.util.Vector;
 
+import ij.CompositeImage;
 import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
@@ -114,18 +116,21 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		if (this.showAndCheckDialog()) {
 			Vector<UnfoldedFiber> fibers = this.process();
 			
-			// TODO Display the output and plot the profiles
-			for (UnfoldedFiber fiber : fibers) {
+			CompositeImage composite = (CompositeImage)this.image;
+			
+			for (UnfoldedFiber fiber : fibers) { // Display each unfolded fiber
 				fiber.fiberImage.show();
 				
 				Plot plot = new Plot("Profiles #1", "Length", "Intensity level");
-				plot.addPoints(fiber.fiberProfiles[0], fiber.fiberProfiles[1], Plot.LINE);
-				plot.draw();
+				
+				for (int c = 0; c < fiber.fiberProfiles.size(); c++) {
+					composite.setC(c+1);
+					plot.setColor(composite.getChannelColor());
+					plot.addPoints(fiber.profilesAbscissa, fiber.fiberProfiles.get(c), Plot.LINE);
+					plot.draw();
+				}
+				
 				plot.show();
-				/*double[] x = {0,1,2,3};
-				double[] y = {0,1,4,9};
-				Plot plot = new Plot("Profiles #1", "Length", "Intensity level", x, y);
-				plot.show();*/
 			}
 		}
 	}
@@ -189,23 +194,29 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 				"Fiber #1", normals.size(), 2*this.radius+1, this.image.getNChannels(),
 				this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
 		
-		double[][] profiles = new double[normals.size()][unfoldedFiber.getNChannels()];
+		Vector<double[]> profiles = new Vector<double[]>();
+		
+		double[] profilesAbscissa = new double[normals.size()];
 		
 		// Go through each channels
-		for (int c = 0; c < this.image.getNChannels(); c++) {
-			this.image.setC(c+1);
+		for (int c = 1; c <= this.image.getNChannels(); c++) {
+			this.image.setC(c);
 			ImageProcessor ip = this.image.getChannelProcessor();
 			
-			unfoldedFiber.setC(c+1);
+			unfoldedFiber.setC(c);
 			ImageProcessor fp = unfoldedFiber.getChannelProcessor();
 			
 			ip.setInterpolate(true);
 			ip.setInterpolationMethod(ImageProcessor.BICUBIC);
 			
+			double[] profile = new double[normals.size()];
+			
 			// Go through each point of ROI
 			for (int x = 0; x < normals.size(); x++) {
+				profilesAbscissa[x] = x * this.image.getCalibration().pixelWidth;
+				
 				Point2D[] normal = normals.get(x);
-				profiles[c][x] = 0.;
+				profile[x] = 0.;
 				
 				for (int s = -this.radius, y = 0; s <= this.radius; s++, y++) {
 					double interpolatedValue = ip.getInterpolatedPixel( // Interpolate pixel value
@@ -214,13 +225,15 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 
 					fp.setf(x,y,(float)interpolatedValue); // Fill image of unfolded fiber
 					
-					if (Double.compare(profiles[c][x], interpolatedValue) < 0) // Get maximal value for profile
-						profiles[c][x] = interpolatedValue;
+					if (Double.compare(profile[x], interpolatedValue) < 0) // Get maximal value for profile
+						profile[x] = interpolatedValue;
 				}
 			}
+			
+			profiles.add(profile);
 		}
 		
-		fibers.add(new UnfoldedFiber(unfoldedFiber, profiles));
+		fibers.add(new UnfoldedFiber(unfoldedFiber, profiles, profilesAbscissa));
 		
 		return fibers;
 	}
@@ -331,13 +344,17 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		
 		/**
 		 * Intensity profiles of the unfolded fiber.
-		 *
-		 * The first row contains the positions (1D
-		 * coordinates) on the fiber. The further rows
-		 * contain the intensity profiles.
 		 */
-		public double[][] fiberProfiles = null;
+		public Vector<double[]> fiberProfiles = null;
 		
+		/**
+		 * Abscissa of intensity profiles.
+		 */
+		public double[] profilesAbscissa = null;
+		
+		/**
+		 * Default constructor
+		 */
 		UnfoldedFiber() {
 			
 		}
@@ -347,9 +364,10 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		 * @param fiberImage
 		 * @param fiberProfiles
 		 */
-		UnfoldedFiber(ImagePlus fiberImage, double[][] fiberProfiles) {
+		UnfoldedFiber(ImagePlus fiberImage, Vector<double[]> fiberProfiles, double[] profilesAbscissa) {
 			this.fiberImage = fiberImage;
 			this.fiberProfiles = fiberProfiles;
+			this.profilesAbscissa = profilesAbscissa;
 		}
 	}
 }
