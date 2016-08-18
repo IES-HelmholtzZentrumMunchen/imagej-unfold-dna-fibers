@@ -17,8 +17,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import java.awt.Color;
-import java.awt.Point;
 import java.awt.geom.Point2D;
 import java.util.Vector;
 
@@ -26,12 +24,10 @@ import ij.CompositeImage;
 import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
-import ij.ImageStack;
 import ij.gui.Roi;
 import ij.process.FloatPolygon;
 import ij.gui.GenericDialog;
 import ij.gui.Line;
-import ij.gui.NewImage;
 import ij.gui.Plot;
 import ij.gui.PointRoi;
 import ij.plugin.filter.PlugInFilter;
@@ -297,12 +293,22 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 						   ( 2. * ( - 2.*x1*x1 + x1*x2 + x1*x3 + x1*x4 + x1*x5 - 2.*x2*x2 + x2*x3 + x2*x4 + x2*x5 - 
 								   2.*x3*x3 + x3*x4 + x3*x5 - 2.*x4*x4 + x4*x5 - 2.*x5*x5 ) );
 			
-			// FIXME the normal orientation is important if we do not want to inverse suddenly the images columns
 			Point2D normal = new Point2D.Double(1,0); // In NaN case, it means horizontal normal (vertical tangent), so initialize to (1,0)
 			
 			if (!Double.isNaN(slope)) {
 				double x = Math.sqrt(1./(1+slope*slope)); // Parametric formula that makes unit vector
 				normal = new Point2D.Double(-slope*x, x); // In 2D, orthogonal vector is unique, so closed-form solution
+			}
+			
+			// Fix heterogeneous orientation of normal vector in order to get 
+			// consistent results (e.g. image unfolding).
+			if (i > 2) {
+				Point2D lastNormal = normals.lastElement()[1];
+				
+				// Since vectors are unit, if the dot product is negative, they have opposite orientations
+				if (Double.compare(normal.getX()*lastNormal.getX() + normal.getY()*lastNormal.getY(),0) < 0) {
+					normal.setLocation(-normal.getX(), -normal.getY());
+				}
 			}
 			
 			/*manager.addRoi(new PointRoi(x3,y3));
