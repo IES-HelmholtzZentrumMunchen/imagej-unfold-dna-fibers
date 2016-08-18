@@ -121,7 +121,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 			for (UnfoldedFiber fiber : fibers) { // Display each unfolded fiber
 				fiber.fiberImage.show();
 				
-				Plot plot = new Plot("Profiles #1", "Length", "Intensity level");
+				Plot plot = new Plot("Profiles #1", "Length ["+this.image.getCalibration().getXUnit()+"]", "Intensity level [a.u.]");
 				
 				for (int c = 0; c < fiber.fiberProfiles.size(); c++) {
 					composite.setC(c+1);
@@ -188,8 +188,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		// the profile (take the maximal value of each column).
 		// Put the intensities into a new image of unfolded fiber
 		// and the maximal intensity in a table.
-		IJ.showMessage(IJ.d2s(this.image.getNChannels()));
-		
+
 		ImagePlus unfoldedFiber = IJ.createHyperStack( // Initialize the image of unfolded fiber
 				"Fiber #1", normals.size(), 2*this.radius+1, this.image.getNChannels(),
 				this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
@@ -197,6 +196,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		Vector<double[]> profiles = new Vector<double[]>();
 		
 		double[] profilesAbscissa = new double[normals.size()];
+		
 		
 		// Go through each channels
 		for (int c = 1; c <= this.image.getNChannels(); c++) {
