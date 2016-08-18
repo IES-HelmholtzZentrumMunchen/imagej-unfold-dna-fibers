@@ -24,10 +24,12 @@ import java.util.Vector;
 import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
+import ij.ImageStack;
 import ij.gui.Roi;
 import ij.process.FloatPolygon;
 import ij.gui.GenericDialog;
 import ij.gui.Line;
+import ij.gui.PointRoi;
 import ij.plugin.filter.PlugInFilter;
 import ij.plugin.frame.RoiManager;
 import ij.process.ImageProcessor;
@@ -150,24 +152,65 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 
 	/**
 	 * Extract and unfold DNA fibers selected by ROIs.
+	 * 
+	 * For now, this method support only one ROI.
+	 * 
+	 * For unfolding, the tangents of the median lines of the fibers
+	 * need to be computed first. Then multi-channel images are sampled
+	 * along the normal of the tangents, with a defined radius. New image
+	 * containing the unfolded fiber and profiles are created from these
+	 * samples.
 	 *
 	 * @return A vector of images containing extracted and unfolded DNA fibers.
 	 */
 	public Vector<UnfoldedFiber> process() {
 		Vector<UnfoldedFiber> fibers = new Vector<UnfoldedFiber>();
+
+		Vector<Point2D[]> normals = this.computeNormals(this.roi);
+
 		
-		RoiManager manager = RoiManager.getInstance();
+		/*// TODO Sample intensity along normal (2*radius + 1)
+		IJ.showMessage(IJ.d2s(this.image.getNChannels()));
+		for (int c = 1; c <= this.image.getNChannels(); c++) {
+			this.image.setC(c);
+			ImageProcessor ip = this.image.getChannelProcessor();
+			IJ.showMessage(IJ.d2s(ip.getMax()));
+		}*/
+					
+					// TODO Compute profile using max intensity
+		
+		return fibers;
+	}
+	
+	/**
+	 * Compute the normals from the points of a ROI.
+	 * 
+	 * The ROI is supposed to be a line, a polyline or a freeline.
+	 * 
+	 * @param roi The input ROI.
+	 * @return The normals (and points) of the given ROI.
+	 */
+	protected Vector<Point2D[]> computeNormals(Roi roi) {
+		Vector<Point2D[]> normals = new Vector<Point2D[]>();
+		
+		/*RoiManager manager = RoiManager.getInstance();
 		if (manager == null)
-			manager = new RoiManager();
+			manager = new RoiManager();*/
 		
-		FloatPolygon points = this.roi.getInterpolatedPolygon();
+		FloatPolygon points = roi.getInterpolatedPolygon();
 		
-		// TODO Add points before and after curve to compensate for the point loss when fitting
+		// Computing the tangent needs 5 points; therefore 2 points at the beginning and
+		// 2 points at the end will not be used for the unfolding. This issue can be
+		// overcome by extrapolation (e.g. linear).
+		// In our case, it represents only a fiber path shortened by 2 pixels at the
+		// beginning and 2 pixels at the end. So we omit a correction for that issue.
 		
+		// Go through each point
 		for (int i = 2; i < points.npoints-2; i++) {
-			// Compute the tangent vector at point p
-			// with a least-square line fit in order to
-			// avoid numerical issues
+			// Instead using finite differences, the tangent vector is computed at 
+			// point p with a least-square linear fit 5 points in total (the central
+			// point 2 points before and 2 points after) in order to avoid numerical
+			// issues.
 			double x1 = points.xpoints[i-2], y1 = points.ypoints[i-2];
 			double x2 = points.xpoints[i-1], y2 = points.ypoints[i-1];
 			double x3 = points.xpoints[i],   y3 = points.ypoints[i];
@@ -180,25 +223,22 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 						   ( 2. * ( - 2.*x1*x1 + x1*x2 + x1*x3 + x1*x4 + x1*x5 - 2.*x2*x2 + x2*x3 + x2*x4 + x2*x5 - 
 								   2.*x3*x3 + x3*x4 + x3*x5 - 2.*x4*x4 + x4*x5 - 2.*x5*x5 ) );
 			
-			Point2D normal = new Point2D.Double(1,0); // In NaN case, it means vertical line (horizontal normal) with top-left origin
+			Point2D normal = new Point2D.Double(1,0); // In NaN case, it means horizontal normal (vertical tangent), so initialize to (1,0)
 			
 			if (!Double.isNaN(slope)) {
 				double x = Math.sqrt(1./(1+slope*slope)); // Parametric formula that makes unit vector
-				normal = new Point2D.Double(-slope*x, x); // In 2D, orthogonal vector is unique
+				normal = new Point2D.Double(-slope*x, x); // In 2D, orthogonal vector is unique, so closed-form solution
 			}
 			
-			if (i % 5 == 0) {
-				manager.addRoi(new Line(
-						x2-this.radius*normal.getX(), y2-this.radius*normal.getY(),
-						x2+this.radius*normal.getX(), y2+this.radius*normal.getY()));
-			}
+			/*manager.addRoi(new PointRoi(x3,y3));
+			manager.addRoi(new Line(
+					x3-this.radius*normal.getX(), y3-this.radius*normal.getY(),
+					x3+this.radius*normal.getX(), y3+this.radius*normal.getY()));*/
 			
-			// TODO Sample intensity along normal (2*radius + 1)
-			
-			// TODO Compute profile using max intensity
+			normals.add(new Point2D[]{new Point2D.Double(x3,y3), normal});
 		}
 		
-		return fibers;
+		return normals;
 	}
 
 	/**
