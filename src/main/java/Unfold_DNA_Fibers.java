@@ -116,7 +116,9 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		if (this.showAndCheckDialog()) {
 			Vector<UnfoldedFiber> fibers = this.process();
 			
-			CompositeImage composite = (CompositeImage)this.image;
+			CompositeImage composite = null;
+			if (this.image.isComposite())
+				composite = (CompositeImage)this.image;
 			
 			for (UnfoldedFiber fiber : fibers) { // Display each unfolded fiber
 				fiber.fiberImage.show();
@@ -124,8 +126,11 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 				Plot plot = new Plot("Profiles #1", "Length ["+this.image.getCalibration().getXUnit()+"]", "Intensity level [a.u.]");
 				
 				for (int c = 0; c < fiber.fiberProfiles.size(); c++) {
-					composite.setC(c+1);
-					plot.setColor(composite.getChannelColor());
+					if (this.image.isComposite()) {
+						composite.setC(c+1);
+						plot.setColor(composite.getChannelColor());
+					}
+					
 					plot.addPoints(fiber.profilesAbscissa, fiber.fiberProfiles.get(c), Plot.LINE);
 					plot.draw();
 				}
