@@ -18,6 +18,8 @@
  */
 
 import java.awt.geom.Point2D;
+import java.lang.reflect.Array;
+import java.util.Arrays;
 import java.util.Vector;
 
 import ij.CompositeImage;
@@ -48,7 +50,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	protected ImagePlus image = null;
 	
 	/** The input ROIs */
-	protected Roi roi = null;
+	protected Vector<Roi> rois = null;
 
 	/** The width of the fibers */
 	public int radius = 2;
@@ -60,16 +62,31 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	public int setup(String arg, ImagePlus imp) {
 		// Get inputs
 		this.image = imp;
-		this.roi = this.image.getRoi();
+		this.rois = new Vector<Roi>();
+		
+		// Gather the ROIs either in the manager or on the image
+		RoiManager manager = RoiManager.getInstance();
+		if (manager == null) {
+			if (this.image.getRoi() != null)
+				this.rois.add(this.image.getRoi());
+		}
+		else
+			this.rois.addAll(Arrays.asList(manager.getRoisAsArray()));
+		
+		// Check if there are actually ROIs
+		if (this.rois.size() == 0) {
+			IJ.showMessage("This command requires at least one ROI!");
+			return DONE;
+		}
 		
 		// Check validity of ROIs
-		if (!this.checkRois(this.roi)) {
+		if (!this.checkRois(this.rois)) {
 			IJ.showMessage("Only straight, segmented and freehand lines are accepted as ROIs!");
 			return DONE;
 		}
 		
 		// Finish the setup
-		return DOES_8G | DOES_16 | DOES_32 | NO_CHANGES | ROI_REQUIRED;
+		return DOES_8G | DOES_16 | DOES_32 | NO_CHANGES;
 	}
 	
 	/**
@@ -81,15 +98,17 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 * @param roi Input roi to check
 	 * @return True if the ROIs are valid, false otherwise.
 	 */
-	private boolean checkRois(Roi roi) {
-		if (this.roi != null && 
-		this.roi.getType() != Roi.LINE && 
-		this.roi.getType() != Roi.POLYLINE &&
-		this.roi.getType() != Roi.FREELINE) {
-			return false;
+	private boolean checkRois(Vector<Roi> rois) {
+		for (Roi roi : rois) {
+			if (roi != null && 
+			roi.getType() != Roi.LINE && 
+			roi.getType() != Roi.POLYLINE &&
+			roi.getType() != Roi.FREELINE) {
+				return false;
+			}
 		}
-		else // not null and one of the valid ROI
-			return true;
+		
+		return true;
 	}
 	
 	/**
@@ -116,19 +135,19 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 			if (this.image.isComposite())
 				composite = (CompositeImage)this.image;
 			
-			for (UnfoldedFiber fiber : fibers) {
-				fiber.fiberImage.show(); // Display fiber image
+			for (int i = 0; i < fibers.size(); i++) {
+				fibers.get(i).fiberImage.show(); // Display fiber image
 				
 				// Display the profiles with the plot GUI
-				Plot plot = new Plot("Profiles #1", "Length ["+this.image.getCalibration().getXUnit()+"]", "Intensity level [a.u.]");
+				Plot plot = new Plot("Profiles #"+IJ.d2s(i+1,0), "Length ["+this.image.getCalibration().getXUnit()+"]", "Intensity level [a.u.]");
 				
-				for (int c = 0; c < fiber.fiberProfiles.size(); c++) {
+				for (int c = 0; c < fibers.get(i).fiberProfiles.size(); c++) {
 					if (this.image.isComposite()) { // Match channel's color with profile's color
 						composite.setC(c+1);
 						plot.setColor(composite.getChannelColor());
 					}
 					
-					plot.addPoints(fiber.profilesAbscissa, fiber.fiberProfiles.get(c), Plot.LINE);
+					plot.addPoints(fibers.get(i).profilesAbscissa, fibers.get(i).fiberProfiles.get(c), Plot.LINE);
 					plot.draw();
 				}
 				
@@ -145,6 +164,7 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		GenericDialog gd = new GenericDialog("DNA Fibers - extract and unfold");
 	
 		gd.addNumericField("radius", this.radius, 0);
+		// TODO put an option to have fibers grouped on one image
 	
 		gd.showDialog();
 		if (gd.wasCanceled())
@@ -183,68 +203,71 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 */
 	public Vector<UnfoldedFiber> process() {
 		Vector<UnfoldedFiber> fibers = new Vector<UnfoldedFiber>();
-
-		Vector<Point2D[]> normals = this.computeNormals(this.roi);
-
-		// Sample intensity along normals (2*radius + 1) and compute
-		// the profile (take the maximal value of each column).
-		// Put the intensities into a new image of unfolded fiber
-		// and the maximal intensity in a table.
 		
-		ImagePlus unfoldedFiber = IJ.createHyperStack( // Initialize the image of unfolded fiber
-				"Fiber #1", normals.size(), 2*this.radius+1, this.image.getNChannels(),
-				this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
-		
-		Vector<double[]> profiles = new Vector<double[]>();
-		double[] profilesAbscissa = new double[normals.size()];
-		
-		
-		// Go through each channels
-		for (int c = 1; c <= this.image.getNChannels(); c++) {
-			this.image.setC(c);
-			ImageProcessor ip = this.image.getChannelProcessor();
+		// Each ROI is processed separately
+		for (int i = 0; i < this.rois.size(); i++) {
+			Vector<Point2D[]> normals = this.computeNormals(this.rois.get(i));
+	
+			// Sample intensity along normals (2*radius + 1) and compute
+			// the profile (take the maximal value of each column).
+			// Put the intensities into a new image of unfolded fiber
+			// and the maximal intensity in a table.
 			
-			unfoldedFiber.setC(c);
-			ImageProcessor fp = unfoldedFiber.getChannelProcessor();
+			ImagePlus unfoldedFiber = IJ.createHyperStack( // Initialize the image of unfolded fiber
+					"Fiber #"+IJ.d2s(i+1,0), normals.size(), 2*this.radius+1, this.image.getNChannels(),
+					this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
 			
-			ip.setInterpolate(true);
-			ip.setInterpolationMethod(ImageProcessor.BICUBIC);
+			Vector<double[]> profiles = new Vector<double[]>();
+			double[] profilesAbscissa = new double[normals.size()];
 			
-			double[] profile = new double[normals.size()];
 			
-			// Go through each point of ROI
-			for (int x = 0; x < normals.size(); x++) {
-				profilesAbscissa[x] = x * this.image.getCalibration().pixelWidth;
+			// Go through each channels
+			for (int c = 1; c <= this.image.getNChannels(); c++) {
+				this.image.setC(c);
+				ImageProcessor ip = this.image.getChannelProcessor();
 				
-				Point2D[] normal = normals.get(x);
-				profile[x] = 0.;
+				unfoldedFiber.setC(c);
+				ImageProcessor fp = unfoldedFiber.getChannelProcessor();
 				
-				for (int s = -this.radius, y = 0; s <= this.radius; s++, y++) {
-					double interpolatedValue = ip.getInterpolatedPixel( // Interpolate pixel value
-							normal[0].getX() + s*normal[1].getX(), 
-							normal[0].getY() + s*normal[1].getY());
-
-					fp.setf(x,y,(float)interpolatedValue); // Fill image of unfolded fiber
+				ip.setInterpolate(true);
+				ip.setInterpolationMethod(ImageProcessor.BICUBIC);
+				
+				double[] profile = new double[normals.size()];
+				
+				// Go through each point of ROI
+				for (int x = 0; x < normals.size(); x++) {
+					profilesAbscissa[x] = x * this.image.getCalibration().pixelWidth;
 					
-					if (Double.compare(profile[x], interpolatedValue) < 0) // Get maximal value for profile
-						profile[x] = interpolatedValue;
+					Point2D[] normal = normals.get(x);
+					profile[x] = 0.;
+					
+					for (int s = -this.radius, y = 0; s <= this.radius; s++, y++) {
+						double interpolatedValue = ip.getInterpolatedPixel( // Interpolate pixel value
+								normal[0].getX() + s*normal[1].getX(), 
+								normal[0].getY() + s*normal[1].getY());
+	
+						fp.setf(x,y,(float)interpolatedValue); // Fill image of unfolded fiber
+						
+						if (Double.compare(profile[x], interpolatedValue) < 0) // Get maximal value for profile
+							profile[x] = interpolatedValue;
+					}
 				}
+				
+				profiles.add(profile);
 			}
 			
-			profiles.add(profile);
+	
+			// If image is composite, copy the channel's color scheme
+			if (this.image.isComposite()) {
+				unfoldedFiber.setDisplayMode(IJ.COMPOSITE);
+				CompositeImage composite = (CompositeImage)unfoldedFiber;
+				composite.copyLuts(this.image);
+				composite.setMode(CompositeImage.COLOR); composite.setMode(CompositeImage.COMPOSITE); // This trick is needed to force the display
+			}
+			
+			
+			fibers.add(new UnfoldedFiber(unfoldedFiber, profiles, profilesAbscissa));
 		}
-		
-
-		// If image is composite, copy the channel's color scheme
-		if (this.image.isComposite()) {
-			unfoldedFiber.setDisplayMode(IJ.COMPOSITE);
-			CompositeImage composite = (CompositeImage)unfoldedFiber;
-			composite.copyLuts(this.image);
-			composite.setMode(CompositeImage.COLOR); composite.setMode(CompositeImage.COMPOSITE); // This trick is needed to force the display
-		}
-		
-		
-		fibers.add(new UnfoldedFiber(unfoldedFiber, profiles, profilesAbscissa));
 		
 		return fibers;
 	}
