@@ -194,13 +194,12 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		// the profile (take the maximal value of each column).
 		// Put the intensities into a new image of unfolded fiber
 		// and the maximal intensity in a table.
-
+		
 		ImagePlus unfoldedFiber = IJ.createHyperStack( // Initialize the image of unfolded fiber
 				"Fiber #1", normals.size(), 2*this.radius+1, this.image.getNChannels(),
 				this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
 		
 		Vector<double[]> profiles = new Vector<double[]>();
-		
 		double[] profilesAbscissa = new double[normals.size()];
 		
 		
@@ -238,6 +237,16 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 			
 			profiles.add(profile);
 		}
+		
+
+		// If image is composite, copy the channel's color scheme
+		if (this.image.isComposite()) {
+			unfoldedFiber.setDisplayMode(IJ.COMPOSITE);
+			CompositeImage composite = (CompositeImage)unfoldedFiber;
+			composite.copyLuts(this.image);
+			composite.setMode(CompositeImage.COLOR); composite.setMode(CompositeImage.COMPOSITE); // This trick is needed to force the display
+		}
+		
 		
 		fibers.add(new UnfoldedFiber(unfoldedFiber, profiles, profilesAbscissa));
 		
