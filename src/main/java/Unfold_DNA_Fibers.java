@@ -27,6 +27,7 @@ import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
+import ij.gui.TextRoi;
 import ij.process.FloatPolygon;
 import ij.gui.GenericDialog;
 import ij.gui.Line;
@@ -53,7 +54,19 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	protected Vector<Roi> rois = null;
 
 	/** The width of the fibers */
-	public int radius = 2;
+	protected int radius = 4;
+	
+	/** Group the unfolded fibers on one image output instead of many outputs (default: true). */
+	protected boolean groupFibers = true;
+	
+	/** X-axis margin for output fibers. */
+	protected int groupMargin = 5;
+	
+	/** Additional space for text label on grouped output. */
+	protected int groupLabelSpace = 20;
+	
+	/** Space between fibers on grouped output. */
+	protected int groupFiberSpace = 5;
 
 	/**
 	 * @see ij.plugin.filter.PlugInFilter#setup(java.lang.String, ij.ImagePlus)
@@ -130,13 +143,35 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	public void run(ImageProcessor ip) {
 		if (this.showAndCheckDialog()) {
 			Vector<UnfoldedFiber> fibers = this.process();
+
+			// Create output group image (if asked)
+			ImagePlus groupOutput = null;
 			
-			CompositeImage composite = null; // If composite image, try to get the channel's color
+			if (this.groupFibers) {
+				int maxPixelsLength = this.getMaximalFiberLengthInPixels(fibers);
+				
+				// To create group output, we need the height (2 x nb of fibers x (2xradius+1)) 
+				// and the width (maximal width of individual fibers).
+				groupOutput = IJ.createHyperStack(
+						"Fibers of "+this.image.getTitle(), 
+						maxPixelsLength+2*this.groupMargin+this.groupLabelSpace, 
+						fibers.size()*(2*this.radius+1+2*this.groupFiberSpace), this.image.getNChannels(),
+						this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
+				groupOutput.show();
+			}
+			
+			// If composite image, try to get the channel's color
+			CompositeImage composite = null;
 			if (this.image.isComposite())
 				composite = (CompositeImage)this.image;
 			
+			// Get image and plot from each fiber
 			for (int i = 0; i < fibers.size(); i++) {
-				fibers.get(i).fiberImage.show(); // Display fiber image
+				// Display fiber image or group output image
+				if (this.groupFibers)
+					this.copyFiberIntoGroup(groupOutput, fibers.get(i), i);
+				else
+					fibers.get(i).fiberImage.show();
 				
 				// Display the profiles with the plot GUI
 				Plot plot = new Plot("Profiles #"+IJ.d2s(i+1,0), "Length ["+this.image.getCalibration().getXUnit()+"]", "Intensity level [a.u.]");
@@ -155,6 +190,50 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 			}
 		}
 	}
+	
+	/**
+	 * Copy the fiber image into group image.
+	 * @param groupImage Target group image. 
+	 * @param fiber Fiber to copy.
+	 * @param index Index of fiber to copy.
+	 */
+	private void copyFiberIntoGroup(ImagePlus groupImage, UnfoldedFiber fiber, int index) {
+		int y0 = index*(2*this.radius+1+2*this.groupFiberSpace)+this.groupFiberSpace;
+		
+		for (int c = 1; c <= groupImage.getNChannels(); c++) {
+			groupImage.setC(c);
+			fiber.fiberImage.setC(c);
+			
+			ImageProcessor gip = groupImage.getChannelProcessor();
+			ImageProcessor fip = fiber.fiberImage.getChannelProcessor();
+			
+			for (int y = 0; y < fip.getHeight(); y++) {
+				for (int x = 0; x < fip.getWidth(); x++) {
+					gip.setf(x+this.groupMargin+this.groupLabelSpace, y0+y, fip.getf(x, y));
+				}
+			}
+			
+			gip.setValue((int)Math.pow(2, 8)-1);
+			gip.drawString("#"+IJ.d2s(index+1, 0), 0, y0+this.radius+8);
+			
+		}
+	}
+	
+	/**
+	 * Get the maximal number of pixels of fiber images.
+	 * @param fibers Unfolded fibers.
+	 * @return The maximal length in pixels (as integer).
+	 */
+	private int getMaximalFiberLengthInPixels(Vector<UnfoldedFiber> fibers) {
+		int maxPixelsLength = 0;
+		
+		for (UnfoldedFiber fiber : fibers) {
+			if (fiber.fiberImage.getWidth() > maxPixelsLength)
+				maxPixelsLength = fiber.fiberImage.getWidth();
+		}
+		
+		return maxPixelsLength;
+	}
 
 	/**
 	 * Show the dialog box for input parameters.
@@ -164,13 +243,14 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		GenericDialog gd = new GenericDialog("DNA Fibers - extract and unfold");
 	
 		gd.addNumericField("radius", this.radius, 0);
-		// TODO put an option to have fibers grouped on one image
+		gd.addCheckbox("Group fibers", this.groupFibers);
 	
 		gd.showDialog();
 		if (gd.wasCanceled())
 			return false;
 	
 		this.radius = (int)gd.getNextNumber();
+		this.groupFibers = gd.getNextBoolean();
 
 		return true;
 	}
