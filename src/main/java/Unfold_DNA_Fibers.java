@@ -17,8 +17,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import java.awt.Button;
+import java.awt.TextField;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.geom.Point2D;
-import java.lang.reflect.Array;
+import java.io.File;
 import java.util.Arrays;
 import java.util.Vector;
 
@@ -27,12 +31,10 @@ import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
-import ij.gui.TextRoi;
 import ij.process.FloatPolygon;
 import ij.gui.GenericDialog;
-import ij.gui.Line;
 import ij.gui.Plot;
-import ij.gui.PointRoi;
+import ij.plugin.ContrastEnhancer;
 import ij.plugin.filter.PlugInFilter;
 import ij.plugin.frame.RoiManager;
 import ij.process.ImageProcessor;
@@ -67,6 +69,12 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	
 	/** Space between fibers on grouped output. */
 	protected int groupFiberSpace = 5;
+	
+	/** Output the files in the specified folder instead of in current ImageJ session (default: false). */
+	protected boolean output = false;
+	
+	/** Output path used to save files when user specified it. */
+	protected String outputPath = "";
 
 	/**
 	 * @see ij.plugin.filter.PlugInFilter#setup(java.lang.String, ij.ImagePlus)
@@ -135,6 +143,20 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		else
 			return true;
 	}
+	
+	/**
+	 * Check the validity of the output path.
+	 * @param outputPath Parameter value to check.
+	 * @return True if the output path is valid, false otherwise.
+	 */
+	private boolean checkOutputPath(String outputPath) {
+		File path = new File(outputPath);
+
+		if (path.exists() && path.isDirectory())
+			return true;
+		else
+			return false;
+	}
 
 	/**
 	 * @see ij.plugin.filter.PlugInFilter#run(ij.process.ImageProcessor)
@@ -157,7 +179,9 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 						maxPixelsLength+2*this.groupMargin+this.groupLabelSpace, 
 						fibers.size()*(2*this.radius+1+2*this.groupFiberSpace), this.image.getNChannels(),
 						this.image.getNSlices(), this.image.getNFrames(), this.image.getBitDepth());
-				groupOutput.show();
+				
+				if (!this.output)
+					groupOutput.show();
 			}
 			
 			// If composite image, try to get the channel's color
@@ -170,8 +194,12 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 				// Display fiber image or group output image
 				if (this.groupFibers)
 					this.copyFiberIntoGroup(groupOutput, fibers.get(i), i);
-				else
-					fibers.get(i).fiberImage.show();
+				else { // !this.groupFibers
+					if (this.output)
+						IJ.save(fibers.get(i).fiberImage, this.outputPath+fibers.get(i).fiberImage.getTitle()+".zip");
+					else // !this.output
+						fibers.get(i).fiberImage.show();
+				}
 				
 				// Display the profiles with the plot GUI
 				Plot plot = new Plot("Profiles #"+IJ.d2s(i+1,0), "Length ["+this.image.getCalibration().getXUnit()+"]", "Intensity level [a.u.]");
@@ -186,8 +214,16 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 					plot.draw();
 				}
 				
-				plot.show();
+				if (this.output) {
+					IJ.save(plot.getImagePlus(), this.outputPath+plot.getTitle()+".png");
+					plot.getResultsTable().save(this.outputPath+plot.getTitle()+".csv");
+				}
+				else // !this.output
+					plot.show();
 			}
+			
+			if (this.groupFibers && this.output)
+				IJ.save(groupOutput, this.outputPath+groupOutput.getTitle()+".zip");
 		}
 	}
 	
@@ -241,16 +277,38 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 	 */
 	private boolean showDialog() {
 		GenericDialog gd = new GenericDialog("DNA Fibers - extract and unfold");
-	
-		gd.addNumericField("radius", this.radius, 0);
-		gd.addCheckbox("Group fibers", this.groupFibers);
+
+		// Add output selection
+		gd.addStringField("output path", this.outputPath, 30);
+		Button firstButton = new Button("Select folder");
+        firstButton.addActionListener(new ActionListener() {
+            // Execute when button is pressed
+            public void actionPerformed(ActionEvent e) {
+                // Display a browser
+                String path = IJ.getDirectory("Select output path");
+
+                // Display file path in text field
+                if (path != null) {
+                    Vector<TextField> stringFields = gd.getStringFields();
+                    stringFields.get(0).setText(path);
+                }
+            }
+        });
+        gd.add(firstButton);
+        
+        // Add other components
+		gd.addNumericField("radius", this.radius, 0, 5, "pixels");
+		gd.addCheckbox("group fibers", this.groupFibers);
+		gd.addCheckbox("auto save files to output path", this.output);
 	
 		gd.showDialog();
 		if (gd.wasCanceled())
 			return false;
 	
-		this.radius = (int)gd.getNextNumber();
+		this.outputPath  = gd.getNextString();
+		this.radius      = (int)gd.getNextNumber();
 		this.groupFibers = gd.getNextBoolean();
+		this.output      = gd.getNextBoolean();
 
 		return true;
 	}
@@ -260,8 +318,10 @@ public class Unfold_DNA_Fibers implements PlugInFilter {
 		boolean notCanceled = this.showDialog();
 		
 		// Check parameters
-		while(notCanceled && !this.checkWidth(this.radius)) {
-			IJ.showMessage("Width must be strictly positive!");
+		while ( notCanceled &&
+				(!this.checkWidth(this.radius) ||
+				(this.output && !this.checkOutputPath(this.outputPath))) ) {
+			IJ.showMessage("Width must be strictly positive!\nOutput path must be a valid and existing path to a folder!");
 			notCanceled = this.showDialog();
 		}
 		
