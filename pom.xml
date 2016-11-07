@@ -14,7 +14,7 @@
 
 	<groupId>sc.fiji</groupId>
     <artifactId>imagej-unfold-dna-fibers_</artifactId>
-    <version>0.5</version>
+    <version>1.0</version>
 
     <name>plugins/imagej-unfold-dna-fibers.jar</name>
     <description>A plugin for ImageJ 1.X, implementing DNA fibers extraction and unfolding from regions of interest.</description>
